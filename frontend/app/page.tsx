@@ -4,8 +4,13 @@ import { useState, useEffect, useRef } from "react";
 import { Mic, Plus, CheckCircle2, Clock, AlertCircle, LayoutDashboard, Settings, User, Search, Bell, Loader, Volume2, Trash2, ArrowRight, Zap, Calendar, Tag, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getTasks, createTask, updateTask, processVoiceCommand, deleteTask, seedDemoData } from "@/lib/api";
+import { useAuth } from "../context/AuthContext";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
+  const { user, isAuthenticated, logout } = useAuth();
+  const router = useRouter();
+  
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -15,7 +20,22 @@ export default function Home() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showDueDatePicker, setShowDueDatePicker] = useState<number | null>(null);
+  const [sidebarFilter, setSidebarFilter] = useState<string>("all");
   const recognitionRef = useRef<any>(null);
+  const [chatHistory, setChatHistory] = useState<{role: 'user' | 'system', text: string}[]>([]);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatHistory]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push("/login");
+    } else {
+      loadTasks();
+    }
+  }, [isAuthenticated, router]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -50,7 +70,14 @@ export default function Home() {
     const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          (task.description?.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesCategory = !selectedCategory || task.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    
+    let matchesSidebar = true;
+    if (sidebarFilter === "todo") matchesSidebar = task.status === "Todo" || !task.status;
+    else if (sidebarFilter === "inprogress") matchesSidebar = task.status === "InProgress" || task.status === "In Progress";
+    else if (sidebarFilter === "done") matchesSidebar = task.status === "Done";
+    else if (sidebarFilter === "urgent") matchesSidebar = task.priority === "High";
+    
+    return matchesSearch && matchesCategory && matchesSidebar;
   });
 
   const categories = Array.from(new Set(tasks.map(t => t.category).filter(Boolean)));
@@ -110,22 +137,31 @@ export default function Home() {
   const handleProcessVoice = async () => {
     if (!transcript.trim()) return;
 
+    const currentCommand = transcript;
+    setChatHistory(prev => [...prev, { role: 'user', text: currentCommand }]);
+
     setIsProcessing(true);
     setVoiceFeedback("⏳ Processing your command...");
 
     try {
-      const result = await processVoiceCommand(transcript);
+      const result = await processVoiceCommand(currentCommand);
       
       if (result.status === "success") {
         setVoiceFeedback(`✅ ${result.message}`);
+        setChatHistory(prev => [...prev, { role: 'system', text: result.message }]);
         if (result.task) {
           setTasks([...tasks, result.task]);
+        } else if (result.intent && result.intent.action === "list") {
+          setSidebarFilter("all");
+          setSearchTerm("");
+          await loadTasks();
         } else {
           // Reload tasks to get any updates
           await loadTasks();
         }
       } else {
         setVoiceFeedback(`❌ ${result.message}`);
+        setChatHistory(prev => [...prev, { role: 'system', text: `Error: ${result.message}` }]);
       }
 
       // Clear transcript after processing
@@ -183,21 +219,32 @@ export default function Home() {
   return (
     <main className="min-h-screen p-8 bg-transparent text-white font-sans selection:bg-blue-500/30">
       {/* Sidebar */}
-      <nav className="fixed left-0 top-0 h-full w-20 flex flex-col items-center py-10 space-y-10 nav-blur z-50">
-        <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/30 ring-1 ring-white/20">
-          <LayoutDashboard size={22} className="text-white" />
+      <nav className="fixed left-0 top-0 h-full w-20 flex flex-col items-center py-10 space-y-8 nav-blur z-50 border-r border-white/5 bg-black/20">
+        <button 
+          title="All Tasks"
+          onClick={() => setSidebarFilter("all")}
+          className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-300 ${sidebarFilter === "all" ? "bg-blue-600 shadow-lg shadow-blue-500/30 ring-1 ring-white/20 text-white" : "text-gray-500 hover:text-white hover:bg-white/5"}`}
+        >
+          <LayoutDashboard size={22} />
+        </button>
+        <div className="flex-1 flex flex-col space-y-6 pt-4 w-full items-center">
+          <NavItem icon={<Clock size={22} />} title="In Progress" active={sidebarFilter === "inprogress"} onClick={() => setSidebarFilter("inprogress")} />
+          <NavItem icon={<CheckCircle2 size={22} />} title="Completed" active={sidebarFilter === "done"} onClick={() => setSidebarFilter("done")} />
+          <NavItem icon={<AlertCircle size={22} />} title="High Priority" active={sidebarFilter === "urgent"} onClick={() => setSidebarFilter("urgent")} />
+          <div className="w-10 h-px bg-white/10 my-2"></div>
+          <NavItem icon={<Search size={22} />} title="Search" onClick={() => document.querySelector<HTMLInputElement>('input[placeholder*="Search"]')?.focus()} />
         </div>
-        <div className="flex-1 flex flex-col space-y-8 pt-4">
-          <NavItem icon={<Clock size={22} />} />
-          <NavItem icon={<CheckCircle2 size={22} />} />
-          <NavItem icon={<AlertCircle size={22} />} />
-          <NavItem icon={<Search size={22} />} />
-        </div>
-        <div className="flex flex-col space-y-8 pb-4">
-          <NavItem icon={<Bell size={22} />} />
-          <NavItem icon={<Settings size={22} />} />
-          <div className="w-10 h-10 rounded-full border border-white/10 overflow-hidden bg-white/5 flex items-center justify-center">
-             <User size={20} className="text-gray-400" />
+        <div className="flex flex-col space-y-6 pb-4 w-full items-center">
+          <NavItem icon={<Bell size={22} />} title="Notifications" onClick={() => setVoiceFeedback("🔔 No new notifications")} />
+          <NavItem icon={<Settings size={22} />} title="Settings" onClick={() => setVoiceFeedback("⚙️ Settings coming soon")} />
+          <div className="flex flex-col gap-4">
+            <div 
+              onClick={() => router.push("/profile")}
+              title="Profile"
+              className="w-10 h-10 rounded-full border border-white/10 overflow-hidden bg-white/5 flex items-center justify-center cursor-pointer hover:border-blue-400 hover:text-blue-400 transition-all"
+            >
+               <User size={20} className="text-gray-400 hover:text-blue-400" />
+            </div>
           </div>
         </div>
       </nav>
@@ -230,6 +277,75 @@ export default function Home() {
             </button>
           </div>
         </header>
+
+        {/* NLP Command Input */}
+        <div className="mb-10">
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleProcessVoice();
+            }}
+            className="flex gap-3 relative"
+          >
+            <div className="flex-1 relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-400">
+                <Zap size={22} />
+              </div>
+              <input
+                type="text"
+                placeholder="Type an AI command... (e.g. 'Create urgent task' or 'Complete the navigation bug')"
+                value={transcript}
+                onChange={(e) => setTranscript(e.target.value)}
+                className="w-full bg-black/20 border border-purple-500/30 rounded-2xl pl-12 pr-5 py-4 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:bg-purple-500/10 transition-all font-medium text-lg shadow-[0_0_15px_rgba(168,85,247,0.05)] backdrop-blur-md"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={!transcript.trim() || isProcessing}
+              className="bg-purple-600 disabled:bg-purple-600/50 disabled:cursor-not-allowed text-white font-bold px-8 py-4 rounded-2xl hover:bg-purple-700 active:scale-95 transition-all shadow-lg shadow-purple-600/20 flex items-center justify-center min-w-[160px]"
+            >
+              {isProcessing ? <Loader size={20} className="animate-spin" /> : "Run Command"}
+            </button>
+          </form>
+          {voiceFeedback && (
+            <motion.p 
+              initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}
+              className={`text-sm mt-3 ml-4 font-medium ${voiceFeedback.includes('❌') ? 'text-red-400' : voiceFeedback.includes('✅') || voiceFeedback.includes('🔄') ? 'text-green-400' : 'text-yellow-400'}`}
+            >
+              {voiceFeedback}
+            </motion.p>
+          )}
+        </div>
+
+        {/* Chatboard / Command History */}
+        {chatHistory.length > 0 && (
+          <div className="mb-10 glass-card rounded-2xl overflow-hidden border border-white/10 flex flex-col shadow-2xl">
+            <div className="bg-white/5 py-3 px-5 border-b border-white/5 flex items-center justify-between">
+              <h3 className="text-white font-medium flex items-center gap-2">
+                <Volume2 size={16} className="text-purple-400" />
+                AI Command History
+              </h3>
+              <button onClick={() => setChatHistory([])} className="text-xs text-gray-500 hover:text-white transition-colors px-2 py-1 rounded hover:bg-white/10">Clear History</button>
+            </div>
+            <div className="p-5 overflow-y-auto flex-1 flex flex-col gap-4 max-h-[300px] scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+              {chatHistory.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    className={`px-4 py-3 rounded-2xl max-w-[80%] text-sm ${
+                    msg.role === 'user' 
+                      ? 'bg-purple-600/90 text-white rounded-tr-sm shadow-md' 
+                      : 'bg-white/10 text-gray-200 rounded-tl-sm border border-white/5'
+                  }`}>
+                    {msg.text}
+                  </motion.div>
+                </div>
+              ))}
+              <div ref={chatEndRef} />
+            </div>
+          </div>
+        )}
 
         {/* Search & Filter Bar */}
         <div className="mb-8 space-y-4">
@@ -283,35 +399,8 @@ export default function Home() {
             </div>
           )}
         </div>
-      </header>
 
-      {/* Voice Command Display */}
-        {transcript && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass-card p-6 mb-8 border border-blue-500/20 rounded-2xl"
-          >
-            <div className="flex items-start gap-3">
-              <Volume2 size={20} className="text-blue-400 mt-1 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm text-gray-400 mb-2">Voice Command:</p>
-                <p className="text-xl text-white font-semibold">{transcript}</p>
-              </div>
-              {transcript && !isProcessing && (
-                <button
-                  onClick={handleProcessVoice}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold text-sm whitespace-nowrap transition-colors"
-                >
-                  Process
-                </button>
-              )}
-            </div>
-            {voiceFeedback && (
-              <p className="text-sm text-yellow-400 mt-3">{voiceFeedback}</p>
-            )}
-          </motion.div>
-        )}
+      {/* Removed Voice Command Display since input bar handles it */}
 
         {/* Stats Section */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-16">
@@ -392,10 +481,27 @@ export default function Home() {
   );
 }
 
-function NavItem({ icon }: { icon: React.ReactNode }) {
+function NavItem({ icon, title, active, onClick }: { icon: React.ReactNode, title?: string, active?: boolean, onClick?: () => void }) {
   return (
-    <button className="text-gray-500 hover:text-blue-400 transition-all p-3 hover:bg-blue-400/5 rounded-2xl cursor-pointer">
+    <button 
+      onClick={(e) => {
+        // Prevent default and stop propagation just in case
+        e.preventDefault();
+        if (onClick) onClick();
+      }}
+      className={`transition-all w-12 h-12 rounded-2xl cursor-pointer flex items-center justify-center group relative ${
+        active 
+        ? 'text-blue-400 bg-blue-400/10 shadow-[inset_0_0_10px_rgba(59,130,246,0.2)] ring-1 ring-blue-400/30' 
+        : 'text-gray-500 hover:text-blue-300 hover:bg-white/5'
+      }`}
+    >
       {icon}
+      {/* Tooltip */}
+      {title && (
+        <span className="absolute left-16 bg-gray-900 border border-white/10 text-white text-xs px-3 py-2 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-[100] shadow-xl">
+          {title}
+        </span>
+      )}
     </button>
   );
 }
