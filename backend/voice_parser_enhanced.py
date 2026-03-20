@@ -13,11 +13,11 @@ try:
     else:
         client = None
         LLM_AVAILABLE = False
-        print("Using regex-based parsing (demo mode)")
+        print("⚠️  Using regex-based parsing (demo mode)")
 except Exception as e:
     client = None
     LLM_AVAILABLE = False
-    print(f"LLM unavailable: {e}. Using regex parsing")
+    print(f"⚠️  LLM unavailable: {e}. Using regex parsing")
 
 def parse_intent(transcription: str) -> Dict[str, Any]:
     """Advanced voice parsing for 25+ industrial features"""
@@ -25,7 +25,7 @@ def parse_intent(transcription: str) -> Dict[str, Any]:
         try:
             return call_llm_for_intent(transcription)
         except Exception as e:
-            print(f"LLM failed: {e}, using regex")
+            print(f"⚠️  LLM failed: {e}, using regex")
             return parse_intent_regex(transcription)
     else:
         return parse_intent_regex(transcription)
@@ -108,22 +108,22 @@ def parse_intent_regex(transcription: str) -> Dict[str, Any]:
 def detect_entity_type(text: str) -> str:
     """Detect what entity the command is about"""
     entity_keywords = {
-        "worker": ["worker", "employee", "staff", "chef", "manager", "person", "hire", "who is", "find worker"],
-        "inventory": ["inventory", "stock", "item", "ingredient", "material", "equipment", "flour", "oil", "salt", "supply", "supplies", "material"],
-        "task": ["task", "job", "work", "production", "create task", "assign task", "do this", "to do", "activity"],
-        "shift": ["shift", "morning", "evening", "night", "schedule shift", "assign shift", "duty"],
-        "order": ["order", "customer", "delivery", "shipment", "purchase", "sale"],
-        "complaint": ["complaint", "issue", "problem", "defect", "quality issue", "wrong"],
-        "quality": ["quality", "check", "inspect", "test", "pass", "fail", "temperature", "standard"],
-        "equipment": ["equipment", "oven", "mixer", "fryer", "machine", "device", "maintenance", "fix"],
-        "safety": ["safety", "incident", "injury", "accident", "hazard", "check", "secure"],
-        "training": ["training", "course", "certification", "learn", "educate", "teach"],
-        "schedule": ["schedule", "planning", "production schedule", "plan", "timeline"],
-        "report": ["report", "daily", "summary", "analytics", "statistics", "count"],
-        "maintenance": ["maintenance", "repair", "service", "technician", "fix"],
-        "cost": ["cost", "expense", "price", "budget", "spending", "money"],
-        "attendance": ["attendance", "checkin", "checkout", "present", "absent", "roster"],
-        "leave": ["leave", "vacation", "sick", "absence", "day off", "holiday"]
+        "worker": ["worker", "employee", "staff", "chef", "manager", "person", "hire"],
+        "inventory": ["inventory", "stock", "item", "ingredient", "material", "equipment", "flour", "oil", "salt"],
+        "task": ["task", "job", "work", "production", "create task", "assign task"],
+        "shift": ["shift", "morning", "evening", "night", "schedule shift", "assign shift"],
+        "order": ["order", "customer", "delivery", "shipment", "purchase"],
+        "complaint": ["complaint", "issue", "problem", "defect", "quality issue"],
+        "quality": ["quality", "check", "inspect", "test", "pass", "fail", "temperature"],
+        "equipment": ["equipment", "oven", "mixer", "fryer", "machine", "device", "maintenance"],
+        "safety": ["safety", "incident", "injury", "accident", "hazard", "check"],
+        "training": ["training", "course", "certification", "learn", "educate"],
+        "schedule": ["schedule", "planning", "production schedule", "plan"],
+        "report": ["report", "daily", "summary", "analytics", "statistics"],
+        "maintenance": ["maintenance", "repair", "service", "technician"],
+        "cost": ["cost", "expense", "price", "budget", "spending"],
+        "attendance": ["attendance", "checkin", "checkout", "present", "absent"],
+        "leave": ["leave", "vacation", "sick", "absence", "day off"]
     }
     
     for entity, keywords in entity_keywords.items():
@@ -134,13 +134,13 @@ def detect_entity_type(text: str) -> str:
 
 def detect_action(text: str) -> str:
     """Detect the ACTION to perform"""
-    if any(w in text for w in ["add", "create", "new", "register", "hire", "record", "make", "do"]):
+    if any(w in text for w in ["add", "create", "new", "register", "hire", "record"]):
         return "create"
-    elif any(w in text for w in ["update", "modify", "change", "set", "mark", "assign", "move"]):
+    elif any(w in text for w in ["update", "modify", "change", "set", "mark", "assign"]):
         return "update"
-    elif any(w in text for w in ["delete", "remove", "fire", "clear", "cancel"]):
+    elif any(w in text for w in ["delete", "remove", "fire"]):
         return "delete"
-    elif any(w in text for w in ["list", "show", "display", "get", "all", "view", "go to", "open", "tell me"]):
+    elif any(w in text for w in ["list", "show", "display", "get", "all", "view"]):
         return "list"
     elif any(w in text for w in ["check", "inspect", "verify", "test"]):
         return "check"
@@ -148,7 +148,7 @@ def detect_action(text: str) -> str:
         return "complete"
     elif any(w in text for w in ["approve", "accept", "yes"]):
         return "approve"
-    elif any(w in text for w in ["reject", "deny", "no", "decline"]):
+    elif any(w in text for w in ["reject", "deny", "no"]):
         return "reject"
     elif any(w in text for w in ["report", "summary", "generate"]):
         return "report"

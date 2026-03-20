@@ -3,8 +3,6 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 
-# For hackathon, we can use SQLite for ease of setup, or PostgreSQL if available.
-# Defaulting to SQLite for speed during local development.
 SQLALCHEMY_DATABASE_URL = "sqlite:///./sql_app.db"
 
 engine = create_engine(

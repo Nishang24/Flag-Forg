@@ -436,7 +436,7 @@ class TaskAuditLog(Base):
     __tablename__ = "task_audit_logs"
     id = Column(Integer, primary_key=True, index=True)
     task_id = Column(Integer, ForeignKey("tasks.id"), index=True)
-    task = relationship("Task")
+    task = relationship("Task", back_populates="audit_logs")
     action = Column(String)
     field_name = Column(String, nullable=True)
     old_value = Column(Text, nullable=True)

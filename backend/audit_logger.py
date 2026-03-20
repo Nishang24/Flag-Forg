@@ -1,126 +1,143 @@
-"""
-Audit logging utility for task changes
-"""
-import models
 from sqlalchemy.orm import Session
 from datetime import datetime
-from typing import Optional, Any, Dict
+import models
 
-
-def log_task_audit(
-    db: Session,
-    task_id: int,
-    action: str,
-    field_name: Optional[str] = None,
-    old_value: Optional[str] = None,
-    new_value: Optional[str] = None,
-    source: str = "api",
-    details: Optional[str] = None
-):
+def log_audit(db: Session, action: str, entity_type: str, entity_id: int, description: str, 
+              source: str = "api", user_id: int = None, worker_id: int = None, 
+              task_id: int = None, inventory_id: int = None):
     """
-    Log a task change to the audit log.
-    
-    Args:
-        db: Database session
-        task_id: ID of the task being changed
-        action: Type of action (created, updated, deleted, voice_command)
-        field_name: Name of field that changed
-        old_value: Previous value
-        new_value: New value
-        source: Source of change (voice, api, workflow, ui)
-        details: Additional context/details
+    Unified audit logging for all entities (workers, inventory, tasks).
     """
-    try:
-        audit_log = models.TaskAuditLog(
-            task_id=task_id,
-            action=action,
-            field_name=field_name,
-            old_value=str(old_value) if old_value is not None else None,
-            new_value=str(new_value) if new_value is not None else None,
-            source=source,
-            details=details,
-            timestamp=datetime.utcnow()
-        )
-        db.add(audit_log)
-        db.commit()
-        print(f"✅ Audit logged: {action} on task {task_id} ({field_name})")
-    except Exception as e:
-        print(f"⚠️ Failed to log audit: {e}")
-        # Don't fail the main operation if logging fails
-        pass
-
-
-def log_task_created(db: Session, task: models.Task, source: str = "api", details: Optional[str] = None):
-    """Log task creation"""
-    log_task_audit(
-        db,
-        task.id,
-        "created",
-        field_name="task",
-        old_value=None,
-        new_value=task.title,
+    audit_log = models.AuditLog(
+        user_id=user_id,
+        worker_id=worker_id if entity_type == "worker" else None,
+        task_id=task_id if entity_type == "task" else None,
+        inventory_id=inventory_id if entity_type == "inventory" else None,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        description=description,
         source=source,
-        details=details or f"Task created via {source}"
+        timestamp=datetime.utcnow()
     )
-
-
-def log_task_deleted(db: Session, task_id: int, task_title: str, source: str = "api", details: Optional[str] = None):
-    """Log task deletion"""
-    log_task_audit(
-        db,
-        task_id,
-        "deleted",
-        field_name="task",
-        old_value=task_title,
-        new_value=None,
-        source=source,
-        details=details or f"Task deleted via {source}"
-    )
-
-
-def log_task_field_change(
-    db: Session,
-    task_id: int,
-    field_name: str,
-    old_value: Any,
-    new_value: Any,
-    source: str = "api"
-):
-    """Log a field change on a task"""
-    log_task_audit(
-        db,
-        task_id,
-        "updated",
-        field_name=field_name,
-        old_value=old_value,
-        new_value=new_value,
-        source=source,
-        details=f"{field_name} changed from '{old_value}' to '{new_value}'"
-    )
-
-
-def get_task_history(db: Session, task_id: int, limit: int = 100) -> list:
-    """Get audit history for a task"""
-    logs = db.query(models.TaskAuditLog).filter(
-        models.TaskAuditLog.task_id == task_id
-    ).order_by(
-        models.TaskAuditLog.timestamp.desc()
-    ).limit(limit).all()
-    return logs
-
-
-def get_recent_activity(db: Session, limit: int = 50) -> list:
-    """Get recent activity across all tasks"""
-    logs = db.query(models.TaskAuditLog).order_by(
-        models.TaskAuditLog.timestamp.desc()
-    ).limit(limit).all()
-    return logs
-
-
-def clear_task_history(db: Session, task_id: int) -> int:
-    """Clear audit history for a task (use cautiously!)"""
-    deleted = db.query(models.TaskAuditLog).filter(
-        models.TaskAuditLog.task_id == task_id
-    ).delete()
+    db.add(audit_log)
     db.commit()
-    return deleted
+    return audit_log
+
+def log_task_created(db: Session, task: models.Task, source: str = "api", details: str = None):
+    """Log task creation"""
+    log_audit(
+        db,
+        action="created",
+        entity_type="task",
+        entity_id=task.id,
+        description=f"Task created: {task.title}",
+        source=source,
+        task_id=task.id
+    )
+
+def log_task_updated(db: Session, task_id: int, task_title: str, changes: str, source: str = "api"):
+    """Log task update"""
+    log_audit(
+        db,
+        action="updated",
+        entity_type="task",
+        entity_id=task_id,
+        description=f"Task updated: {task_title} - {changes}",
+        source=source,
+        task_id=task_id
+    )
+
+def log_task_field_change(db: Session, task_id: int, field_name: str, old_value, new_value, source: str = "api"):
+    """Log individual field change for tasks"""
+    task_audit = models.TaskAuditLog(
+        task_id=task_id,
+        action="updated",
+        field_name=field_name,
+        old_value=str(old_value),
+        new_value=str(new_value),
+        source=source,
+        timestamp=datetime.utcnow()
+    )
+    db.add(task_audit)
+    db.commit()
+
+def log_task_deleted(db: Session, task_id: int, task_title: str, source: str = "api", details: str = None):
+    """Log task deletion"""
+    log_audit(
+        db,
+        action="deleted",
+        entity_type="task",
+        entity_id=task_id,
+        description=f"Task deleted: {task_title}" + (f" - {details}" if details else ""),
+        source=source,
+        task_id=task_id
+    )
+
+def log_worker_created(db: Session, worker: models.Worker, source: str = "api"):
+    """Log worker creation"""
+    log_audit(
+        db,
+        action="created",
+        entity_type="worker",
+        entity_id=worker.id,
+        description=f"Worker created: {worker.name} ({worker.position})",
+        source=source,
+        worker_id=worker.id
+    )
+
+def log_worker_updated(db: Session, worker_id: int, worker_name: str, changes: str, source: str = "api"):
+    """Log worker update"""
+    log_audit(
+        db,
+        action="updated",
+        entity_type="worker",
+        entity_id=worker_id,
+        description=f"Worker updated: {worker_name} - {changes}",
+        source=source,
+        worker_id=worker_id
+    )
+
+def log_worker_deleted(db: Session, worker_id: int, worker_name: str, source: str = "api"):
+    """Log worker deletion"""
+    log_audit(
+        db,
+        action="deleted",
+        entity_type="worker",
+        entity_id=worker_id,
+        description=f"Worker deleted: {worker_name}",
+        source=source,
+        worker_id=worker_id
+    )
+
+def log_inventory_created(db: Session, item: models.InventoryItem, source: str = "api"):
+    """Log inventory item creation"""
+    log_audit(
+        db,
+        action="created",
+        entity_type="inventory",
+        entity_id=item.id,
+        description=f"Inventory created: {item.name} (SKU: {item.sku})",
+        source=source,
+        inventory_id=item.id
+    )
+
+def log_inventory_transaction(db: Session, item_id: int, transaction_type: str, quantity: int, 
+                             item_name: str, source: str = "api"):
+    """Log inventory transaction"""
+    log_audit(
+        db,
+        action=transaction_type,
+        entity_type="inventory",
+        entity_id=item_id,
+        description=f"Inventory {transaction_type}: {item_name} ({quantity} units)",
+        source=source,
+        inventory_id=item_id
+    )
+
+def get_audit_trail(db: Session, entity_type: str, entity_id: int):
+    """Get full audit trail for an entity"""
+    return db.query(models.AuditLog).filter(
+        models.AuditLog.entity_type == entity_type,
+        models.AuditLog.entity_id == entity_id
+    ).order_by(models.AuditLog.timestamp.desc()).all()

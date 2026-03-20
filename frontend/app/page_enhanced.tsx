@@ -9,24 +9,24 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState('tasks');
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [workers, setWorkers] = useState<any[]>([]);
-  const [inventory, setInventory] = useState<any[]>([]);
-  const [auditLogs, setAuditLogs] = useState<any[]>([]);
-  const [shifts, setShifts] = useState<any[]>([]);
-  const [attendance, setAttendance] = useState<any[]>([]);
-  const [qualityReports, setQualityReports] = useState<any[]>([]);
-  const [equipment, setEquipment] = useState<any[]>([]);
-  const [safetyIncidents, setSafetyIncidents] = useState<any[]>([]);
-  const [orders, setOrders] = useState<any[]>([]);
-  const [systemStatus, setSystemStatus] = useState<any>(null);
+  const [tasks, setTasks] = useState([]);
+  const [workers, setWorkers] = useState([]);
+  const [inventory, setInventory] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [shifts, setShifts] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+  const [qualityReports, setQualityReports] = useState([]);
+  const [equipment, setEquipment] = useState([]);
+  const [safetyIncidents, setSafetyIncidents] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [systemStatus, setSystemStatus] = useState(null);
   const [responseMessage, setResponseMessage] = useState('');
   const [newItemForm, setNewItemForm] = useState({ name: '', category: '', quantity: 0 });
   const [loading, setLoading] = useState(false);
 
   // Initialize speech recognition
   const initSpeechRecognition = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       alert('Speech Recognition not supported in this browser');
       return null;
@@ -51,7 +51,7 @@ export default function Home() {
         setAuditLogs(auditData || []);
 
         // Fetch system status
-        const statusResponse = await fetch('http://127.0.0.1:8001/system-status').catch(() => null);
+        const statusResponse = await fetch('http://127.0.0.1:8000/system-status').catch(() => null);
         if (statusResponse?.ok) {
           const status = await statusResponse.json();
           setSystemStatus(status);
@@ -74,9 +74,9 @@ export default function Home() {
     setIsListening(true);
     recognition.start();
 
-    recognition.onresult = async (event: any) => {
-      const transcript = Array.from(event.results as any)
-        .map((result: any) => result[0].transcript)
+    recognition.onresult = async (event) => {
+      const transcript = Array.from(event.results)
+        .map((result) => result[0].transcript)
         .join('');
 
       setIsListening(false);
@@ -88,35 +88,21 @@ export default function Home() {
 
       setLoading(true);
       try {
-        const result: any = await processVoiceCommand(transcript);
+        const result = await processVoiceCommand(transcript);
         setResponseMessage(result.audio_response || result.message);
         
-        // Intelligent Tab Switching
-        if (result.entity_type) {
-          const tabMap: {[key: string]: string} = {
-            'worker': 'workers',
-            'inventory': 'inventory',
-            'task': 'tasks',
-            'shift': 'shifts',
-            'attendance': 'attendance',
-            'quality': 'quality',
-            'equipment': 'equipment',
-            'safety': 'safety',
-            'order': 'orders',
-            'audit': 'audit'
-          };
-          if (tabMap[result.entity_type]) {
-            setActiveTab(tabMap[result.entity_type]);
-          }
-        }
-      } catch (error: any) {
+        // Refresh data after voice command
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+      } catch (error) {
         setResponseMessage('Error processing command: ' + error.message);
       } finally {
         setLoading(false);
       }
     };
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event) => {
       setIsListening(false);
       setResponseMessage('Error: ' + event.error);
     };
