@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", system-ui;
+  --color-primary: #3b82f6;
+  --color-secondary: #a855f7;
+}
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+  --background-start: #0a0a0f;
+  --background-end: #020205;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: radial-gradient(circle at top right, #1e1e2d, transparent),
+              radial-gradient(circle at bottom left, #0a0a1a, transparent),
+              var(--background-start);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+@layer components {
+  .glass-card {
+    background-color: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 1.25rem;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+    transition: all 0.3s ease;
+  }
+  
+  .glass-card:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-color: rgba(99, 102, 241, 0.3);
+  }
+
+  .nav-blur {
+    background-color: rgba(10, 10, 15, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .status-badge {
+    @apply text-[10px] uppercase tracking-widest font-bold px-2.5 py-1 rounded-full;
+  }
+}
+
+.voice-glow {
+  box-shadow: 0 0 30px rgba(59, 130, 246, 0.4);
+}
+
+.text-gradient {
+  background: linear-gradient(to right, #60a5fa, #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
