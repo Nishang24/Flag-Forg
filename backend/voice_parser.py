@@ -47,7 +47,7 @@ def call_llm_for_intent(text: str) -> Dict[str, Any]:
     
     Return ONLY valid JSON (no markdown, no extra text):
     {{
-        "action": "create|update|delete",
+        "action": "create|update|delete|list",
         "title": "task title",
         "priority": "Low|Medium|High",
         "description": "optional description or null",
@@ -74,10 +74,18 @@ def parse_intent_regex(transcription: str) -> Dict[str, Any]:
     transcription_lower = transcription.lower()
     
     action = "create"
-    if "update" in transcription_lower or "move" in transcription_lower:
+    status = "Todo"
+    
+    if any(word in transcription_lower for word in ["update", "move", "complete", "finish", "done"]):
         action = "update"
+        if any(word in transcription_lower for word in ["complete", "finish", "done"]):
+            status = "Done"
+        elif "progress" in transcription_lower or "running" in transcription_lower:
+            status = "InProgress"
     elif "delete" in transcription_lower or "remove" in transcription_lower:
         action = "delete"
+    elif any(word in transcription_lower for word in ["show", "list", "all", "what"]):
+        action = "list"
         
     priority = "Medium"
     if "high" in transcription_lower or "urgent" in transcription_lower or "critical" in transcription_lower:
@@ -94,5 +102,5 @@ def parse_intent_regex(transcription: str) -> Dict[str, Any]:
         "priority": priority,
         "description": None,
         "due_date": None,
-        "status": "Todo"
+        "status": status
     }

@@ -2,7 +2,8 @@ from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
-import models, schemas, database, workflow_engine, voice_parser, audit_logger
+import models, schemas, database, workflow_engine, voice_parser, audit_logger, auth
+from fastapi.security import OAuth2PasswordRequestForm
 from database import engine
 from pydantic import BaseModel
 
@@ -24,9 +25,38 @@ app.add_middleware(
 def read_root():
     return {"message": "Welcome to VoiceFlow API"}
 
+@app.post("/api/register", response_model=schemas.UserResponse)
+def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
+    db_user = db.query(models.User).filter(models.User.email == user.email).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    hashed_password = auth.get_password_hash(user.password)
+    new_user = models.User(email=user.email, hashed_password=hashed_password)
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+@app.post("/api/login", response_model=schemas.Token)
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(database.get_db)):
+    user = db.query(models.User).filter(models.User.email == form_data.username).first()
+    if not user or not auth.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token = auth.create_access_token(data={"sub": user.email})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/api/users/me", response_model=schemas.UserResponse)
+def read_users_me(current_user: models.User = Depends(auth.get_current_user)):
+    return current_user
+
 @app.post("/tasks/", response_model=schemas.Task)
-def create_task(task: schemas.TaskCreate, db: Session = Depends(database.get_db)):
-    db_task = models.Task(**task.dict())
+def create_task(task: schemas.TaskCreate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    db_task = models.Task(**task.dict(), owner_id=current_user.id)
     db.add(db_task)
     db.commit()
     db.refresh(db_task)
@@ -40,13 +70,13 @@ def create_task(task: schemas.TaskCreate, db: Session = Depends(database.get_db)
     return db_task
 
 @app.get("/tasks/", response_model=List[schemas.Task])
-def read_tasks(skip: int = 0, limit: int = 100, db: Session = Depends(database.get_db)):
-    tasks = db.query(models.Task).offset(skip).limit(limit).all()
+def read_tasks(skip: int = 0, limit: int = 100, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    tasks = db.query(models.Task).filter(models.Task.owner_id == current_user.id).offset(skip).limit(limit).all()
     return tasks
 
 @app.put("/tasks/{task_id}", response_model=schemas.Task)
-def update_task(task_id: int, task: schemas.TaskUpdate, db: Session = Depends(database.get_db)):
-    db_task = db.query(models.Task).filter(models.Task.id == task_id).first()
+def update_task(task_id: int, task: schemas.TaskUpdate, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    db_task = db.query(models.Task).filter(models.Task.id == task_id, models.Task.owner_id == current_user.id).first()
     if not db_task:
         raise HTTPException(status_code=404, detail="Task not found")
     
@@ -68,8 +98,8 @@ def update_task(task_id: int, task: schemas.TaskUpdate, db: Session = Depends(da
     return db_task
 
 @app.delete("/tasks/{task_id}")
-def delete_task(task_id: int, db: Session = Depends(database.get_db)):
-    db_task = db.query(models.Task).filter(models.Task.id == task_id).first()
+def delete_task(task_id: int, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    db_task = db.query(models.Task).filter(models.Task.id == task_id, models.Task.owner_id == current_user.id).first()
     if not db_task:
         raise HTTPException(status_code=404, detail="Task not found")
     
@@ -97,7 +127,7 @@ class VoiceRequest(BaseModel):
     transcription: str
 
 @app.post("/voice/process")
-def process_voice_command(request: VoiceRequest, db: Session = Depends(database.get_db)):
+def process_voice_command(request: VoiceRequest, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     """
     🎤 Main voice processing endpoint.
     Takes voice transcription, parses intent with GPT-4o, and executes action.
@@ -111,7 +141,8 @@ def process_voice_command(request: VoiceRequest, db: Session = Depends(database.
                 description=intent.get("description"),
                 priority=intent.get("priority", "Medium"),
                 status=intent.get("status", "Todo"),
-                due_date=intent.get("due_date")
+                due_date=intent.get("due_date"),
+                owner_id=current_user.id
             )
             db.add(db_task)
             db.commit()
@@ -138,7 +169,8 @@ def process_voice_command(request: VoiceRequest, db: Session = Depends(database.
         elif intent["action"] == "delete":
             # Find task by title and delete it
             db_task = db.query(models.Task).filter(
-                models.Task.title.ilike(f"%{intent.get('title', '')}%")
+                models.Task.title.ilike(f"%{intent.get('title', '')}%"),
+                models.Task.owner_id == current_user.id
             ).first()
             if db_task:
                 task_title = db_task.title
@@ -159,10 +191,63 @@ def process_voice_command(request: VoiceRequest, db: Session = Depends(database.
                 }
             return {"status": "error", "message": "Task not found"}
         
+        elif intent["action"] == "update":
+            # Find task by title and update it
+            title_search = intent.get('title', '')
+            if not title_search:
+                return {"status": "error", "message": "Could not identify which task to update"}
+                
+            db_task = db.query(models.Task).filter(
+                models.Task.title.ilike(f"%{title_search}%"),
+                models.Task.owner_id == current_user.id
+            ).first()
+            
+            if db_task:
+                # Update fields if provided
+                if intent.get("status"):
+                    db_task.status = intent.get("status")
+                if intent.get("priority"):
+                    db_task.priority = intent.get("priority")
+                if intent.get("due_date"):
+                    db_task.due_date = intent.get("due_date")
+                
+                db.commit()
+                db.refresh(db_task)
+                
+                # Log voice update
+                audit_logger.log_task_field_change(
+                    db,
+                    db_task.id,
+                    "status",
+                    "old",
+                    db_task.status,
+                    source="voice",
+                    details=f"Updated via NLP: '{request.transcription}'"
+                )
+                
+                # Trigger workflows
+                workflow_engine.check_and_trigger_workflows(db_task.id, db_task.status, db)
+                
+                return {
+                    "status": "success",
+                    "message": f"🔄 Updated task: {db_task.title}",
+                    "task": db_task,
+                    "audio_response": f"Task updated: {db_task.title}"
+                }
+            return {"status": "error", "message": f"Task '{title_search}' not found"}
+        
+        elif intent["action"] == "list":
+            return {
+                "status": "success",
+                "message": "📋 Showing all active tasks",
+                "intent": intent,
+                "audio_response": "Here are all your tasks"
+            }
+        
         else:
             return {
                 "status": "success",
-                "message": "Intent recognized",
+                "message": "Intent recognized but action unsupported",
                 "intent": intent,
                 "audio_response": f"I understood: {intent.get('title', 'your command')}"
             }
@@ -212,7 +297,11 @@ def seed_demo_data(db: Session = Depends(database.get_db)):
     db.commit()
 
     # Create demo user
-    demo_user = models.User(username="demo")
+    demo_user = models.User(
+        email="demo@voiceflow.ai",
+        hashed_password=auth.get_password_hash("demo123"),
+        role="admin"
+    )
     db.add(demo_user)
     db.flush()
 
