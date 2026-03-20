@@ -149,6 +149,24 @@ export default function Home() {
               <h1 className="text-3xl font-bold text-white">🎤 VoiceFlow</h1>
               <p className="text-slate-400">Kitchenware Industry Management</p>
             </div>
+            
+            {/* Global Search */}
+            <div className="flex-1 max-w-md mx-8 hidden lg:block">
+              <input 
+                type="text" 
+                placeholder="Search across all modules..."
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onChange={async (e) => {
+                  if (e.target.value.length > 2) {
+                    const searchRes = await fetch(`http://localhost:8001/search?q=${e.target.value}`);
+                    const data = await searchRes.json();
+                    console.log('Search Results:', data);
+                    // In a full implementation, you'd show a search overlay here
+                  }
+                }}
+              />
+            </div>
+
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
