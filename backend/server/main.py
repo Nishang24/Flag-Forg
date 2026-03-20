@@ -879,9 +879,28 @@ def system_status(db: Session = Depends(database.get_db)):
 @app.get("/health")
 def health_check():
     return {
-        "status": "✅ Healthy",
-        "timestamp": datetime.utcnow(),
         "service": "VoiceFlow Kitchenware Management API v1.0"
+    }
+
+# ============= SEARCH & ANALYTICS =============
+@app.get("/search")
+def global_search(q: str, db: Session = Depends(database.get_db)):
+    """Search across all major entities"""
+    results = {
+        "tasks": db.query(models.Task).filter(models.Task.title.contains(q)).limit(5).all(),
+        "workers": db.query(models.Worker).filter(models.Worker.name.contains(q)).limit(5).all(),
+        "inventory": db.query(models.InventoryItem).filter(models.InventoryItem.name.contains(q)).limit(5).all()
+    }
+    return results
+
+@app.get("/analytics/summary")
+def get_analytics_summary(db: Session = Depends(database.get_db)):
+    """Backend-calculated analytics for dashboards"""
+    return {
+        "task_completion_rate": 85.0, # Mocked for now
+        "inventory_value": sum(i.price_per_unit * i.quantity for i in db.query(models.InventoryItem).all()),
+        "active_workers_count": db.query(models.Worker).filter(models.Worker.status == "Active").count(),
+        "low_stock_items": db.query(models.InventoryItem).filter(models.InventoryItem.quantity < models.InventoryItem.min_quantity).count()
     }
 
 if __name__ == "__main__":
